@@ -1,14 +1,9 @@
 import os
 import json
 import sqlite3
-import snowflake.client
-
 
 settings_file_path = './settings.json'
-database_folder_path = './database'
-
-def get_snowflake_uuid() -> int:
-    return snowflake.client.get_guid()
+database_folder_path = './.database'
 
 def load_settings_file() -> dict:
     if not os.path.exists(settings_file_path):
@@ -43,7 +38,6 @@ def get_files_info(folder_name):
     files_info = []
     for curDir, _,  files in os.walk(folder_name):
         for file in files:
-            print('aaa')
             file_path = os.path.join(curDir, file)
             files_info.append((
                 file_path,
@@ -62,8 +56,9 @@ def comparison_files_info(current_files_info, cur):
 
     intersection_paths = pervious_paths & current_paths
 
-    added_path = current_paths - intersection_paths
-    deleted_path = pervious_paths - intersection_paths
+    added_path = list(current_paths - intersection_paths)
+    added_files_info = list(filter(lambda file: file[0] in added_path, current_files_info))
+    deleted_paths = list(pervious_paths - intersection_paths)
 
     pervious_timestamps = [timestamp[1] for timestamp in pervious_files_info]
 
@@ -74,18 +69,21 @@ def comparison_files_info(current_files_info, cur):
         if file_info[0] != pervious_timestamps[pervious_index]:
             updated_files_info.append(pervious_files_info[pervious_index])
     
-    return (added_path, deleted_path, updated_files_info)
+    updated_files_info(added_files_info, deleted_paths, updated_files_info)
+    
+    return (added_files_info, deleted_paths, updated_files_info)
 
-def updated_files_info(added_files_info, deleted_path, cur, conn):
-    pass
+def updated_database(added_files_info, deleted_paths, cur, conn):
+    cur.executemany('insert into files_info (path, timestamp) values (?, ?)', added_files_info)
+    cur.executemany('delete from files_info where path=?', deleted_paths)
+    conn.commit()
 
 def main():
     for folder_path in load_settings_file()['monitor_folders']:
         # _, folder_name = os.path.split(folder_path)
         conn, cur = init_database(folder_path.replace('\\', "-").replace('/', "-").replace(':', '-'))
         current_files_info = get_files_info(folder_path)
-        # added_path, deleted_path, updated_files_info = comparison_files_info(current_files_info, cur)
-        print(comparison_files_info(current_files_info, cur))
+        added_files_info, deleted_paths, updated_files_info = comparison_files_info(current_files_info, cur)
 
 
 if __name__ == "__main__":
